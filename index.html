@@ -61,6 +61,15 @@
   .sortbtn.on { background:rgba(255,255,255,.08); }
   .prio-btn { background:transparent; border:none; cursor:pointer; font-size:17px; line-height:1; padding:2px 4px; color:var(--muted); opacity:.35; margin-left:auto; }
   .prio-btn.on { color:#ff9500; opacity:1; }
+  .ct-chip { display:inline-flex; align-items:center; gap:5px; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:5px 10px; font-size:13px; font-weight:600; cursor:pointer; color:var(--muted); }
+  .ct-chip .dot { width:9px; height:9px; border-radius:50%; flex:none; }
+  .ct-chip.on { background:rgba(255,255,255,.08); }
+  .ct-edit { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:13px; padding:4px 2px; }
+  .ct-edit:hover { color:var(--fg); }
+  .ct-badge { font-size:11px; font-weight:700; flex:none; margin-left:4px; }
+  .selected { outline:2px solid #fff; outline-offset:2px; }
+  .selbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .selhint { color:var(--muted); font-size:12px; }
   .checks { display:flex; gap:8px; margin-top:auto; }
   .chk { display:flex; align-items:center; cursor:pointer; }
   .chk input {
@@ -192,12 +201,21 @@
   var lightbox = document.getElementById('lightbox');
   var lightboxImg = document.getElementById('lightboxImg');
 
-  function empty() { return { clients: [], groups: [], videos: [] }; }
+  function defaultContentTypes() {
+    return [
+      { id: 'ct1', name: 'Продающий', color: '#0a84ff' },
+      { id: 'ct2', name: 'Экспертный', color: '#30d5c8' },
+      { id: 'ct3', name: 'Личный', color: '#8e8e93' },
+      { id: 'ct4', name: 'Запуск', color: '#ff9f0a' }
+    ];
+  }
+  function empty() { return { clients: [], groups: [], videos: [], contentTypes: defaultContentTypes() }; }
   function load() {
     var s;
     try { s = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { s = null; }
     if (!s || !s.clients) return empty();
     s.groups = s.groups || [];
+    s.contentTypes = (s.contentTypes && s.contentTypes.length) ? s.contentTypes : defaultContentTypes();
     s.videos.forEach(function (v) {
       if (!v.groupId) {
         var g = s.groups.filter(function (g) { return g.clientId === v.clientId; })[0];
@@ -216,6 +234,11 @@
   function findClient(id) { return state.clients.filter(function (c) { return c.id === id; })[0]; }
   function findVideo(id) { return state.videos.filter(function (v) { return v.id === id; })[0]; }
   function findGroup(id) { return state.groups.filter(function (g) { return g.id === id; })[0]; }
+  function ctypeOf(id) { return state.contentTypes.filter(function (t) { return t.id === id; })[0] || null; }
+  function toggleSelected(id) {
+    var i = selected.indexOf(id);
+    if (i === -1) selected.push(id); else selected.splice(i, 1);
+  }
 
   function showModal(opts) {
     modalTitle.textContent = opts.title || '';
@@ -249,6 +272,8 @@
   var currentOrientation = 'v';
   var currentTab = 'script';
   var currentSort = null;
+  var selectMode = false;
+  var selected = [];
 
   function render() {
     if (route.screen === 'home') renderHome();
@@ -288,6 +313,29 @@
     if (!c) { route = { screen: 'home' }; render(); return; }
     var h = '<div class="topbar"><button class="btn btn-back" data-action="backHome">← Назад</button><div class="title">' + esc(c.name) + '</div><button class="btn btn-add" data-action="addGroup">+ группа</button></div>';
     var groups = state.groups.filter(function (g) { return g.clientId === c.id; });
+    h += '<div class="sumline">';
+    state.contentTypes.forEach(function (t) {
+      var cnt = groups.filter(function (g) { return g.ctype === t.id; }).length;
+      h += '<button class="ct-chip' + (currentSort === 'ctype:' + t.id ? ' on' : '') + '" data-action="sortBy" data-s="ctype:' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + ' ' + cnt + '</button>'
+        + '<button class="ct-edit" data-action="renameCtype" data-ct="' + t.id + '" title="Переименовать">✎</button>';
+    });
+    h += '</div>';
+    h += '<div class="selbar"><button class="btn btn-ghost" data-action="toggleSelect">' + (selectMode ? '✓ выбор включён' : 'выбрать группы') + '</button>';
+    if (selectMode) {
+      h += '<span class="selhint">тапни группы, выделено: ' + selected.length + '</span>';
+      state.contentTypes.forEach(function (t) {
+        h += '<button class="ct-chip" data-action="assignCtype" data-ct="' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + '</button>';
+      });
+      h += '<button class="ct-chip" data-action="assignCtype" data-ct="">снять метку</button>';
+      h += '<button class="btn btn-ghost" data-action="toggleSelect">готово</button>';
+    }
+    h += '</div>';
+    if (currentSort && currentSort.indexOf('ctype:') === 0) {
+      var cid = currentSort.slice(6);
+      groups = groups.slice().sort(function (a, b) {
+        return (b.ctype === cid ? 1 : 0) - (a.ctype === cid ? 1 : 0);
+      });
+    }
     if (!groups.length) {
       h += '<div class="empty">Пока нет групп. Нажми «+ группа».</div>';
     } else {
@@ -297,8 +345,10 @@
         var plan = vids.filter(function (v) { return v.planned; }).length;
         var done = vids.filter(function (v) { return v.done; }).length;
         var pub = vids.filter(function (v) { return v.published; }).length;
-        h += '<div class="vcard groupcard" data-action="openGroup" data-drag="group" data-id="' + g.id + '">'
-          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(g.name) + '</span><button class="rbtn" data-action="renameGroupInline" data-id="' + g.id + '" title="Переименовать">✎</button></div>'
+        var ct = g.ctype ? ctypeOf(g.ctype) : null;
+        var sel = selected.indexOf(g.id) !== -1;
+        h += '<div class="vcard groupcard' + (sel ? ' selected' : '') + '" data-action="openGroup" data-drag="group" data-id="' + g.id + '"' + (ct ? ' style="border-color:' + ct.color + '"' : '') + '>'
+          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(g.name) + '</span>' + (ct ? '<span class="ct-badge" style="color:' + ct.color + '">' + esc(ct.name) + '</span>' : '') + '<button class="rbtn" data-action="renameGroupInline" data-id="' + g.id + '" title="Переименовать">✎</button></div>'
           + '<div class="grow"><span class="gstats">'
           + '<span class="gstat plan" title="План">' + plan + '</span>'
           + '<span class="gstat done" title="Сделано">' + done + '</span>'
@@ -328,8 +378,31 @@
       + '<button class="sortbtn done' + (currentSort === 'done' ? ' on' : '') + '" data-action="sortBy" data-s="done">сделано ' + done + '</button>'
       + '<button class="sortbtn pub' + (currentSort === 'published' ? ' on' : '') + '" data-action="sortBy" data-s="published">выложено ' + pub + '</button>'
       + '</div>';
+    h += '<div class="sumline">';
+    state.contentTypes.forEach(function (t) {
+      var cnt = vids.filter(function (v) { return v.ctype === t.id; }).length;
+      h += '<button class="ct-chip' + (currentSort === 'ctype:' + t.id ? ' on' : '') + '" data-action="sortBy" data-s="ctype:' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + ' ' + cnt + '</button>'
+        + '<button class="ct-edit" data-action="renameCtype" data-ct="' + t.id + '" title="Переименовать">✎</button>';
+    });
+    h += '</div>';
+    h += '<div class="selbar"><button class="btn btn-ghost" data-action="toggleSelect">' + (selectMode ? '✓ выбор включён' : 'выбрать ролики') + '</button>';
+    if (selectMode) {
+      h += '<span class="selhint">тапни ролики, выделено: ' + selected.length + '</span>';
+      state.contentTypes.forEach(function (t) {
+        h += '<button class="ct-chip" data-action="assignCtype" data-ct="' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + '</button>';
+      });
+      h += '<button class="ct-chip" data-action="assignCtype" data-ct="">снять метку</button>';
+      h += '<button class="btn btn-ghost" data-action="toggleSelect">готово</button>';
+    }
+    h += '</div>';
     if (currentSort) {
+      var ctypeSort = currentSort.indexOf('ctype:') === 0 ? currentSort.slice(6) : null;
       vids = vids.slice().sort(function (a, b) {
+        if (ctypeSort) {
+          var ma = a.ctype === ctypeSort ? 1 : 0;
+          var mb = b.ctype === ctypeSort ? 1 : 0;
+          return mb - ma;
+        }
         var ma = a[currentSort] ? 1 : 0;
         var mb = b[currentSort] ? 1 : 0;
         if (ma !== mb) return mb - ma;
@@ -346,8 +419,10 @@
     } else {
       h += '<div class="vgrid">';
       vids.forEach(function (v) {
-        h += '<div class="vcard" data-action="openVideo" data-drag="video" data-id="' + v.id + '">'
-          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(v.title || 'Без названия') + '</span><button class="rbtn" data-action="renameVideoInline" data-id="' + v.id + '" title="Переименовать">✎</button></div>'
+        var ct = v.ctype ? ctypeOf(v.ctype) : null;
+        var sel = selected.indexOf(v.id) !== -1;
+        h += '<div class="vcard' + (sel ? ' selected' : '') + '" data-action="openVideo" data-drag="video" data-id="' + v.id + '"' + (ct ? ' style="border-color:' + ct.color + '"' : '') + '>'
+          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(v.title || 'Без названия') + '</span>' + (ct ? '<span class="ct-badge" style="color:' + ct.color + '">' + esc(ct.name) + '</span>' : '') + '<button class="rbtn" data-action="renameVideoInline" data-id="' + v.id + '" title="Переименовать">✎</button></div>'
           + '<div class="checks">'
           + '<label class="chk plan" title="План"><input type="checkbox" data-bind="planned" data-id="' + v.id + '"' + (v.planned ? ' checked' : '') + '></label>'
           + '<label class="chk done" title="Сделан"><input type="checkbox" data-bind="done" data-id="' + v.id + '"' + (v.done ? ' checked' : '') + '></label>'
@@ -451,7 +526,10 @@
         save(); render();
       }});
     }
-    else if (a === 'openGroup') { route = { screen: 'group', clientId: route.clientId, groupId: btn.dataset.id }; render(); }
+    else if (a === 'openGroup') {
+      if (selectMode) { toggleSelected(btn.dataset.id); render(); return; }
+      route = { screen: 'group', clientId: route.clientId, groupId: btn.dataset.id }; render();
+    }
     else if (a === 'renameGroupInline') {
       var g = findGroup(btn.dataset.id);
       showModal({ title: 'Название группы', input: true, value: g.name, okLabel: 'Сохранить', onOk: function (t) {
@@ -478,7 +556,10 @@
       state.videos.push({ id: uid(), clientId: g.clientId, groupId: g.id, title: String(next), orientation: currentOrientation, plot: '', script: [], storyboard: [] });
       save(); render();
     }
-    else if (a === 'openVideo') { route = { screen: 'video', videoId: btn.dataset.id }; currentTab = 'script'; render(); }
+    else if (a === 'openVideo') {
+      if (selectMode) { toggleSelected(btn.dataset.id); render(); return; }
+      route = { screen: 'video', videoId: btn.dataset.id }; currentTab = 'script'; render();
+    }
     else if (a === 'backClient') { route = { screen: 'client', clientId: route.clientId }; render(); }
     else if (a === 'backGroup') {
       var v = findVideo(route.videoId);
@@ -515,6 +596,25 @@
       if (!v) return;
       v.priority = !v.priority;
       save(); render();
+    }
+    else if (a === 'toggleSelect') { selectMode = !selectMode; selected = []; render(); }
+    else if (a === 'assignCtype') {
+      var t = btn.dataset.ct || '';
+      selected.forEach(function (id) {
+        var v = findVideo(id); if (v) v.ctype = t;
+        var gr = findGroup(id); if (gr) gr.ctype = t;
+      });
+      selected = []; selectMode = false;
+      save(); render();
+    }
+    else if (a === 'renameCtype') {
+      var ct = ctypeOf(btn.dataset.ct);
+      if (!ct) return;
+      showModal({ title: 'Название типа контента', input: true, value: ct.name, okLabel: 'Сохранить', onOk: function (nm) {
+        nm = (nm || '').trim();
+        if (!nm) return;
+        ct.name = nm; save(); render();
+      }});
     }
     else if (a === 'addScriptRow') {
       var v = findVideo(btn.dataset.id);
