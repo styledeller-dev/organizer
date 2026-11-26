@@ -25,9 +25,10 @@
 
   /* Клиенты */
   .clist { display:flex; flex-direction:column; gap:10px; }
-  .ccard { display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; cursor:pointer; }
+  .ccard { display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; cursor:pointer; }
   .ccard:hover { border-color:#3a3a42; }
-  .ccard .name { font-size:17px; font-weight:600; }
+  .ccard .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:17px; font-weight:600; }
+  .ccard .gstats { flex:none; }
   .ccard .count { font-size:13px; color:var(--muted); }
   .empty { color:var(--muted); text-align:center; padding:32px 0; font-size:14px; }
 
@@ -301,13 +302,13 @@
         var done = cvids.filter(function (v) { return v.done; }).length;
         var pub = cvids.filter(function (v) { return v.published; }).length;
         h += '<div class="ccard" data-action="openClient" data-id="' + c.id + '">'
+          + '<button class="rbtn" data-action="renameClient" data-id="' + c.id + '" title="Переименовать">✎</button>'
           + '<span class="name">' + esc(c.name) + '</span>'
           + '<span class="gstats">'
           + '<span class="gstat plan" title="План">' + plan + '</span>'
           + '<span class="gstat done" title="Сделано">' + done + '</span>'
           + '<span class="gstat pub" title="Выложено">' + pub + '</span>'
           + '</span>'
-          + '<button class="rbtn" data-action="renameClient" data-id="' + c.id + '" title="Переименовать">✎</button>'
           + '</div>';
       });
       h += '</div>';
