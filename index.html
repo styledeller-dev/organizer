@@ -53,11 +53,13 @@
   .gstats { display:flex; align-items:center; gap:10px; font-size:14px; font-weight:700; }
   .gstat.plan { color:var(--red); }
   .gstat.done { color:var(--yellow); }
+  .gstat.idea { color:var(--muted); }
   .gstat.pub { color:var(--green); }
   .sumline { display:flex; gap:8px; align-items:center; margin-bottom:12px; font-size:13px; font-weight:600; flex-wrap:wrap; }
   .sortbtn { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:5px 10px; font-size:13px; font-weight:600; cursor:pointer; color:var(--muted); }
   .sortbtn.plan { color:var(--red); }
   .sortbtn.done { color:var(--yellow); }
+  .sortbtn.idea { color:var(--muted); }
   .sortbtn.pub { color:var(--green); }
   .sortbtn.on { background:rgba(255,255,255,.08); }
   .prio-btn { background:transparent; border:none; cursor:pointer; font-size:17px; line-height:1; padding:2px 4px; color:var(--muted); opacity:.35; margin-left:auto; }
@@ -82,6 +84,7 @@
   .chk input:checked { background:var(--c); }
   .chk.plan input { --c: var(--red); }
   .chk.done input { --c: var(--yellow); }
+  .chk.idea input { --c: var(--muted); }
   .chk.pub input { --c: var(--green); }
 
   .drag-handle { flex:none; cursor:grab; color:var(--muted); font-size:14px; line-height:1; padding:2px 4px; user-select:none; }
@@ -320,6 +323,7 @@
     var total = 0;
     state.videos.forEach(function (v) {
       (v.storyboard || []).forEach(function (item) { if (item.img) total += item.img.length; });
+      (v.script || []).forEach(function (item) { if (item.img) total += item.img.length; });
     });
     return total;
   }
@@ -331,7 +335,7 @@
   function isOn(k) { return sortKeys.indexOf(k) !== -1; }
   function cmpMatch(a, b, k) {
     var ma, mb;
-    if (k === 'planned' || k === 'done' || k === 'published') {
+    if (k === 'idea' || k === 'planned' || k === 'done' || k === 'published') {
       ma = a[k] ? 1 : 0; mb = b[k] ? 1 : 0;
     } else if (k.indexOf('ctype:') === 0) {
       var id = k.slice(6); ma = (a.ctype === id) ? 1 : 0; mb = (b.ctype === id) ? 1 : 0;
@@ -349,7 +353,7 @@
   function sortedVideos(list) {
     if (!sortKeys.length) return list;
     var keys = sortKeys.slice();
-    var hasStatus = keys.some(function (k) { return k === 'planned' || k === 'done' || k === 'published'; });
+    var hasStatus = keys.some(function (k) { return k === 'idea' || k === 'planned' || k === 'done' || k === 'published'; });
     return list.slice().sort(function (a, b) {
       for (var i = 0; i < keys.length; i++) { var c = cmpMatch(a, b, keys[i]); if (c) return c; }
       if (hasStatus) { var pa = a.priority ? 1 : 0, pb = b.priority ? 1 : 0; if (pa !== pb) return pb - pa; }
@@ -413,6 +417,7 @@
       h += '<div class="clist">';
       clients.forEach(function (c) {
         var cvids = state.videos.filter(function (v) { return v.clientId === c.id; });
+        var idea = cvids.filter(function (v) { return v.idea; }).length;
         var plan = cvids.filter(function (v) { return v.planned; }).length;
         var done = cvids.filter(function (v) { return v.done; }).length;
         var pub = cvids.filter(function (v) { return v.published; }).length;
@@ -421,6 +426,7 @@
           + '<button class="rbtn" data-action="deleteClient" data-id="' + c.id + '" title="Удалить клиента">✕</button>'
           + '<span class="name">' + esc(c.name) + '</span>'
           + '<span class="gstats">'
+          + '<span class="gstat idea" title="Идея">' + idea + '</span>'
           + '<span class="gstat plan" title="План">' + plan + '</span>'
           + '<span class="gstat done" title="Сделано">' + done + '</span>'
           + '<span class="gstat pub" title="Выложено">' + pub + '</span>'
@@ -466,6 +472,7 @@
       h += '<div class="vgrid">';
       shownGroups.forEach(function (g) {
         var vids = state.videos.filter(function (v) { return v.groupId === g.id; });
+        var idea = vids.filter(function (v) { return v.idea; }).length;
         var plan = vids.filter(function (v) { return v.planned; }).length;
         var done = vids.filter(function (v) { return v.done; }).length;
         var pub = vids.filter(function (v) { return v.published; }).length;
@@ -474,6 +481,7 @@
         h += '<div class="vcard groupcard' + (sel ? ' selected' : '') + '" data-action="openGroup" data-drag="group" data-id="' + g.id + '"' + (ct ? ' style="border-color:' + ct.color + '"' : '') + '>'
           + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(g.name) + '</span>' + '<button class="rbtn" data-action="renameGroupInline" data-id="' + g.id + '" title="Переименовать">✎</button></div>'
           + '<div class="grow"><span class="gstats">'
+          + '<span class="gstat idea" title="Идея">' + idea + '</span>'
           + '<span class="gstat plan" title="План">' + plan + '</span>'
           + '<span class="gstat done" title="Сделано">' + done + '</span>'
           + '<span class="gstat pub" title="Выложено">' + pub + '</span>'
@@ -494,10 +502,12 @@
       + '<button class="' + (currentOrientation === 'h' ? 'on' : '') + '" data-action="setOrient" data-o="h">Горизонтальные</button>'
       + '</div>';
     var vids = state.videos.filter(function (v) { return v.groupId === g.id && v.orientation === currentOrientation; });
+    var idea = vids.filter(function (v) { return v.idea; }).length;
     var plan = vids.filter(function (v) { return v.planned; }).length;
     var done = vids.filter(function (v) { return v.done; }).length;
     var pub = vids.filter(function (v) { return v.published; }).length;
     h += '<div class="sumline">'
+      + '<button class="sortbtn idea' + (isOn('idea') ? ' on' : '') + '" data-action="sortBy" data-s="idea">идея ' + idea + '</button>'
       + '<button class="sortbtn plan' + (isOn('planned') ? ' on' : '') + '" data-action="sortBy" data-s="planned">план ' + plan + '</button>'
       + '<button class="sortbtn done' + (isOn('done') ? ' on' : '') + '" data-action="sortBy" data-s="done">сделано ' + done + '</button>'
       + '<button class="sortbtn pub' + (isOn('published') ? ' on' : '') + '" data-action="sortBy" data-s="published">выложено ' + pub + '</button>'
@@ -533,6 +543,7 @@
         h += '<div class="vcard' + (sel ? ' selected' : '') + '" data-action="openVideo" data-drag="video" data-id="' + v.id + '"' + (ct ? ' style="border-color:' + ct.color + '"' : '') + '>'
           + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(v.title || 'Без названия') + '</span>' + '<button class="rbtn" data-action="renameVideoInline" data-id="' + v.id + '" title="Переименовать">✎</button></div>'
           + '<div class="checks">'
+          + '<label class="chk idea" title="Идея"><input type="checkbox" data-bind="idea" data-id="' + v.id + '"' + (v.idea ? ' checked' : '') + '></label>'
           + '<label class="chk plan" title="План"><input type="checkbox" data-bind="planned" data-id="' + v.id + '"' + (v.planned ? ' checked' : '') + '></label>'
           + '<label class="chk done" title="Сделан"><input type="checkbox" data-bind="done" data-id="' + v.id + '"' + (v.done ? ' checked' : '') + '></label>'
           + '<label class="chk pub" title="Выложен"><input type="checkbox" data-bind="published" data-id="' + v.id + '"' + (v.published ? ' checked' : '') + '></label>'
@@ -574,6 +585,9 @@
           + '<div class="scard-row2"><div><label>Локация</label><input data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="location" value="' + esc(row.location) + '"></div><div><label>План</label><input data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="shot" value="' + esc(row.shot) + '"></div></div>'
           + '<label>Что в кадре</label><textarea data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="inFrame" rows="2">' + esc(row.inFrame) + '</textarea>'
           + '<label>Звук / реплики</label><textarea data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="sound" rows="2">' + esc(row.sound) + '</textarea>'
+          + (row.img
+              ? '<div class="story-img-wrap"><img src="' + row.img + '" data-action="openImg"><button class="rm" data-action="delScriptImg" data-id="' + v.id + '" data-row="' + row.id + '">убрать фото</button></div>'
+              : '<button class="add-img" data-action="addScriptImg" data-id="' + v.id + '" data-row="' + row.id + '">＋ фото</button>')
           + '<div class="loc-row"><span class="loc-label">Локация:</span>'
           + '<button class="loc-dot yellow' + (loc === 'yellow' ? ' on' : '') + '" data-action="setLoc" data-id="' + v.id + '" data-row="' + row.id + '" data-color="yellow" title="Жёлтая"></button>'
           + '<button class="loc-dot purple' + (loc === 'purple' ? ' on' : '') + '" data-action="setLoc" data-id="' + v.id + '" data-row="' + row.id + '" data-color="purple" title="Фиолетовая"></button>'
@@ -800,6 +814,18 @@
         save(); render();
       }});
     }
+    else if (a === 'addScriptImg') {
+      pendingImage = { videoId: btn.dataset.id, rowId: btn.dataset.row, script: true };
+      imgInput.click();
+    }
+    else if (a === 'delScriptImg') {
+      var v = findVideo(btn.dataset.id);
+      var rowId = btn.dataset.row;
+      showModal({ title: 'Убрать фото?', msg: 'Картинка кадра будет убрана.', okLabel: 'Убрать', onOk: function () {
+        var row = v.script.filter(function (r) { return r.id === rowId; })[0];
+        if (row) { row.img = ''; save(); render(); }
+      }});
+    }
     else if (a === 'addStoryImg') {
       pendingImage = { videoId: btn.dataset.id, rowId: btn.dataset.row };
       imgInput.click();
@@ -864,7 +890,8 @@
     if (el.tagName !== 'INPUT' || el.type !== 'checkbox') return;
     var v = findVideo(el.dataset.id);
     if (!v) return;
-    if (el.dataset.bind === 'planned') v.planned = el.checked;
+    if (el.dataset.bind === 'idea') v.idea = el.checked;
+    else if (el.dataset.bind === 'planned') v.planned = el.checked;
     else if (el.dataset.bind === 'done') v.done = el.checked;
     else if (el.dataset.bind === 'published') v.published = el.checked;
     save();
@@ -1044,10 +1071,11 @@
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
         var dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         var v = findVideo(target.videoId);
-        var row = v.storyboard.filter(function (r) { return r.id === target.rowId; })[0];
+        var list = target.script ? (v.script || []) : (v.storyboard || []);
+        var row = list.filter(function (r) { return r.id === target.rowId; })[0];
         var existing = (row && row.img) ? row.img.length : 0;
         if (totalImageBytes() - existing + dataUrl.length > IMG_TOTAL_MAX) {
-          showModal({ title: 'Лимит картинок', msg: 'Слишком много фото — хранилище браузера (~5 МБ) переполнится. Убери часть фото из раскадровки.', cancelable: false });
+          showModal({ title: 'Лимит картинок', msg: 'Слишком много фото — хранилище браузера (~5 МБ) переполнится. Убери часть фото.', cancelable: false });
           return;
         }
         if (row) { row.img = dataUrl; save(); render(); }
