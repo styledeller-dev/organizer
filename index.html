@@ -39,7 +39,7 @@
 
   /* Сетка роликов */
   .vgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
-  .vcard { display:flex; flex-direction:column; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; cursor:pointer; min-height:86px; }
+  .vcard { display:flex; flex-direction:column; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; cursor:pointer; min-height:86px; }
   .vcard:hover { border-color:#3a3a42; }
   .vt-row { display:flex; align-items:center; justify-content:space-between; gap:6px; }
   .vcard .vt { flex:1; min-width:0; font-size:16px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -159,6 +159,7 @@
 
   .footer { margin-top:28px; display:flex; gap:10px; justify-content:center; }
   .footer .btn { font-size:13px; }
+  .footer-note { margin-top:14px; text-align:center; color:var(--muted); font-size:12px; line-height:1.5; }
 
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.62); display:flex; align-items:center; justify-content:center; z-index:100; padding:20px; }
   .modal-box { background:#1a1a1e; border:1px solid var(--line); border-radius:16px; padding:20px; width:100%; max-width:360px; display:flex; flex-direction:column; gap:14px; }
@@ -167,6 +168,13 @@
   .modal-box input { background:#101014; border:1px solid var(--line); border-radius:10px; padding:12px; font-size:16px; outline:none; color:var(--fg); }
   .modal-box input:focus { border-color:var(--red); }
   .modal-btns { display:flex; gap:10px; justify-content:flex-end; }
+  .histbar { position:fixed; top:10px; right:14px; z-index:150; display:flex; gap:6px; }
+  .hist-btn { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; width:34px; height:34px; font-size:16px; cursor:pointer; }
+  .hist-btn:hover { border-color:#3a3a42; }
+  .hist-btn:disabled { opacity:.3; cursor:default; }
+  .searchbar { max-width:960px; margin:0 auto 12px; padding:0 20px; }
+  .searchbar input { width:100%; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:14px; outline:none; }
+  .searchbar input:focus { border-color:var(--red); }
   .ctxmenu { position:fixed; z-index:300; background:#1a1a1e; border:1px solid var(--line); border-radius:12px; padding:6px; min-width:190px; display:none; box-shadow:0 8px 24px rgba(0,0,0,.5); }
   .ctx-title { font-size:11px; color:var(--muted); padding:6px 10px 4px; text-transform:uppercase; letter-spacing:.4px; }
   .ctx-item { font-size:14px; padding:8px 10px; border-radius:8px; cursor:pointer; }
@@ -175,7 +183,12 @@
 </style>
 </head>
 <body>
+<div id="searchbar" class="searchbar"><input type="search" id="searchInput" placeholder="Поиск…"></div>
 <div id="app"></div>
+<div id="histbar" class="histbar">
+  <button id="undoBtn" class="hist-btn" title="Назад">←</button>
+  <button id="redoBtn" class="hist-btn" title="Вперёд">→</button>
+</div>
 <div id="modal" class="modal" style="display:none;">
   <div class="modal-box">
     <div class="modal-title" id="modalTitle"></div>
@@ -213,7 +226,7 @@
     return [
       { id: 'ct1', name: 'Продающий', color: '#0a84ff' },
       { id: 'ct2', name: 'Экспертный', color: '#30d5c8' },
-      { id: 'ct3', name: 'Личный', color: '#8e8e93' },
+      { id: 'ct3', name: 'Личный', color: '#ff6482' },
       { id: 'ct4', name: 'Запуск', color: '#ff9f0a' }
     ];
   }
@@ -224,6 +237,7 @@
     if (!s || !s.clients) return empty();
     s.groups = s.groups || [];
     s.contentTypes = (s.contentTypes && s.contentTypes.length) ? s.contentTypes : defaultContentTypes();
+    s.contentTypes.forEach(function (t) { if (t.color === '#8e8e93') t.color = '#ff6482'; });
     s.videos.forEach(function (v) {
       if (!v.groupId) {
         var g = s.groups.filter(function (g) { return g.clientId === v.clientId; })[0];
@@ -234,7 +248,56 @@
     });
     return s;
   }
-  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
+  // --- отмена / повтор ---
+  var undoStack = [], redoStack = [], lastSaved = '', pendingUndo = null, undoTimer = null;
+  var UNDO_MAX = 100;
+  function persist() { try { localStorage.setItem(STORAGE_KEY, lastSaved); } catch (e) {} }
+  function updateUndoButtons() {
+    var u = document.getElementById('undoBtn'), r = document.getElementById('redoBtn');
+    if (u) u.disabled = (undoStack.length === 0 && pendingUndo === null);
+    if (r) r.disabled = (redoStack.length === 0);
+  }
+  function save() {
+    var s;
+    try { s = JSON.stringify(state); } catch (e) { return; }
+    if (s === lastSaved) { persist(); updateUndoButtons(); return; }
+    if (pendingUndo === null) pendingUndo = lastSaved;
+    lastSaved = s;
+    persist();
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(function () {
+      undoStack.push(pendingUndo);
+      if (undoStack.length > UNDO_MAX) undoStack.shift();
+      redoStack = [];
+      pendingUndo = null;
+      updateUndoButtons();
+    }, 350);
+    updateUndoButtons();
+  }
+  function flushPending() {
+    if (pendingUndo !== null) {
+      clearTimeout(undoTimer);
+      undoStack.push(pendingUndo);
+      if (undoStack.length > UNDO_MAX) undoStack.shift();
+      redoStack = [];
+      pendingUndo = null;
+    }
+  }
+  function undo() {
+    flushPending();
+    if (!undoStack.length) { updateUndoButtons(); return; }
+    redoStack.push(lastSaved);
+    lastSaved = undoStack.pop();
+    try { state = JSON.parse(lastSaved); } catch (e) { /* ignore */ }
+    persist(); render(); updateUndoButtons();
+  }
+  function redo() {
+    if (!redoStack.length) { updateUndoButtons(); return; }
+    undoStack.push(lastSaved);
+    lastSaved = redoStack.pop();
+    try { state = JSON.parse(lastSaved); } catch (e) { /* ignore */ }
+    persist(); render(); updateUndoButtons();
+  }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -243,10 +306,57 @@
   function findVideo(id) { return state.videos.filter(function (v) { return v.id === id; })[0]; }
   function findGroup(id) { return state.groups.filter(function (g) { return g.id === id; })[0]; }
   function ctypeOf(id) { return state.contentTypes.filter(function (t) { return t.id === id; })[0] || null; }
+  var IMG_TOTAL_MAX = 3 * 1024 * 1024;
+  function lastBackupStr() {
+    var t = null;
+    try { t = localStorage.getItem('producer-last-backup'); } catch (e) {}
+    if (!t) return 'ещё не делался';
+    var d = new Date(parseInt(t, 10));
+    if (isNaN(d.getTime())) return 'ещё не делался';
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function totalImageBytes() {
+    var total = 0;
+    state.videos.forEach(function (v) {
+      (v.storyboard || []).forEach(function (item) { if (item.img) total += item.img.length; });
+    });
+    return total;
+  }
   function toggleSelected(id) {
     var i = selected.indexOf(id);
     if (i === -1) selected.push(id); else selected.splice(i, 1);
   }
+  function matchQ(s) { return !currentQuery || (s || '').toLowerCase().indexOf(currentQuery) !== -1; }
+  function isOn(k) { return sortKeys.indexOf(k) !== -1; }
+  function cmpMatch(a, b, k) {
+    var ma, mb;
+    if (k === 'planned' || k === 'done' || k === 'published') {
+      ma = a[k] ? 1 : 0; mb = b[k] ? 1 : 0;
+    } else if (k.indexOf('ctype:') === 0) {
+      var id = k.slice(6); ma = (a.ctype === id) ? 1 : 0; mb = (b.ctype === id) ? 1 : 0;
+    } else { ma = 0; mb = 0; }
+    return mb - ma;
+  }
+  function sortedGroups(list) {
+    if (!sortKeys.length) return list;
+    var keys = sortKeys.slice();
+    return list.slice().sort(function (a, b) {
+      for (var i = 0; i < keys.length; i++) { var c = cmpMatch(a, b, keys[i]); if (c) return c; }
+      return 0;
+    });
+  }
+  function sortedVideos(list) {
+    if (!sortKeys.length) return list;
+    var keys = sortKeys.slice();
+    var hasStatus = keys.some(function (k) { return k === 'planned' || k === 'done' || k === 'published'; });
+    return list.slice().sort(function (a, b) {
+      for (var i = 0; i < keys.length; i++) { var c = cmpMatch(a, b, keys[i]); if (c) return c; }
+      if (hasStatus) { var pa = a.priority ? 1 : 0, pb = b.priority ? 1 : 0; if (pa !== pb) return pb - pa; }
+      return 0;
+    });
+  }
+  function clearSearch() { currentQuery = ''; var si = document.getElementById('searchInput'); if (si) si.value = ''; }
 
   function showModal(opts) {
     modalTitle.textContent = opts.title || '';
@@ -276,12 +386,14 @@
   lightbox.addEventListener('click', function () { lightbox.style.display = 'none'; });
 
   var state = load();
+  var lastSaved = JSON.stringify(state);
   var route = { screen: 'home' };
   var currentOrientation = 'v';
   var currentTab = 'script';
-  var currentSort = null;
+  var sortKeys = [];
   var selectMode = false;
   var selected = [];
+  var currentQuery = '';
 
   function render() {
     if (route.screen === 'home') renderHome();
@@ -292,17 +404,21 @@
 
   function renderHome() {
     var h = '<div class="topbar"><div class="title">Мои клиенты</div><button class="btn btn-add" data-action="addClient">+ клиент</button></div>';
+    var clients = state.clients.filter(function (c) { return matchQ(c.name); });
     if (!state.clients.length) {
       h += '<div class="empty">Пока нет клиентов. Нажми «+ клиент».</div>';
+    } else if (!clients.length) {
+      h += '<div class="empty">Ничего не найдено.</div>';
     } else {
       h += '<div class="clist">';
-      state.clients.forEach(function (c) {
+      clients.forEach(function (c) {
         var cvids = state.videos.filter(function (v) { return v.clientId === c.id; });
         var plan = cvids.filter(function (v) { return v.planned; }).length;
         var done = cvids.filter(function (v) { return v.done; }).length;
         var pub = cvids.filter(function (v) { return v.published; }).length;
         h += '<div class="ccard" data-action="openClient" data-id="' + c.id + '">'
           + '<button class="rbtn" data-action="renameClient" data-id="' + c.id + '" title="Переименовать">✎</button>'
+          + '<button class="rbtn" data-action="deleteClient" data-id="' + c.id + '" title="Удалить клиента">✕</button>'
           + '<span class="name">' + esc(c.name) + '</span>'
           + '<span class="gstats">'
           + '<span class="gstat plan" title="План">' + plan + '</span>'
@@ -314,6 +430,7 @@
       h += '</div>';
     }
     h += '<div class="footer"><button class="btn btn-ghost" data-action="exportData">Сохранить в файл</button><button class="btn btn-ghost" data-action="importData">Загрузить из файла</button></div>';
+    h += '<div class="footer-note">Облако/бэкенд (~1000 ₽/год) пока не сделан. Лучше сохранять файл каждый вечер.<br>Последний бэкап: ' + lastBackupStr() + '</div>';
     app.innerHTML = h;
   }
 
@@ -325,10 +442,11 @@
     h += '<div class="sumline">';
     state.contentTypes.forEach(function (t) {
       var cnt = groups.filter(function (g) { return g.ctype === t.id; }).length;
-      h += '<button class="ct-chip' + (currentSort === 'ctype:' + t.id ? ' on' : '') + '" data-action="sortBy" data-s="ctype:' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + ' ' + cnt + '</button>'
+      h += '<button class="ct-chip' + (isOn('ctype:' + t.id) ? ' on' : '') + '" data-action="sortBy" data-s="ctype:' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + ' ' + cnt + '</button>'
         + '<button class="ct-edit" data-action="renameCtype" data-ct="' + t.id + '" title="Переименовать">✎</button>';
     });
     h += '</div>';
+    if (sortKeys.length) h += '<div class="selbar"><button class="sortbtn" data-action="sortReset" title="Сбросить сортировку">сброс сортировки</button></div>';
     h += '<div class="selbar"><button class="btn btn-ghost" data-action="toggleSelect">' + (selectMode ? '✓ выбор включён' : 'выбрать группы') + '</button>';
     if (selectMode) {
       h += '<span class="selhint">тапни группы, выделено: ' + selected.length + '</span>';
@@ -339,17 +457,14 @@
       h += '<button class="btn btn-ghost" data-action="toggleSelect">готово</button>';
     }
     h += '</div>';
-    if (currentSort && currentSort.indexOf('ctype:') === 0) {
-      var cid = currentSort.slice(6);
-      groups = groups.slice().sort(function (a, b) {
-        return (b.ctype === cid ? 1 : 0) - (a.ctype === cid ? 1 : 0);
-      });
-    }
+    var shownGroups = sortedGroups(groups.filter(function (g) { return matchQ(g.name); }));
     if (!groups.length) {
       h += '<div class="empty">Пока нет групп. Нажми «+ группа».</div>';
+    } else if (!shownGroups.length) {
+      h += '<div class="empty">Ничего не найдено.</div>';
     } else {
       h += '<div class="vgrid">';
-      groups.forEach(function (g) {
+      shownGroups.forEach(function (g) {
         var vids = state.videos.filter(function (v) { return v.groupId === g.id; });
         var plan = vids.filter(function (v) { return v.planned; }).length;
         var done = vids.filter(function (v) { return v.done; }).length;
@@ -357,7 +472,7 @@
         var ct = g.ctype ? ctypeOf(g.ctype) : null;
         var sel = selected.indexOf(g.id) !== -1;
         h += '<div class="vcard groupcard' + (sel ? ' selected' : '') + '" data-action="openGroup" data-drag="group" data-id="' + g.id + '"' + (ct ? ' style="border-color:' + ct.color + '"' : '') + '>'
-          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(g.name) + '</span>' + (ct ? '<span class="ct-badge" style="color:' + ct.color + '">' + esc(ct.name) + '</span>' : '') + '<button class="rbtn" data-action="renameGroupInline" data-id="' + g.id + '" title="Переименовать">✎</button></div>'
+          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(g.name) + '</span>' + '<button class="rbtn" data-action="renameGroupInline" data-id="' + g.id + '" title="Переименовать">✎</button></div>'
           + '<div class="grow"><span class="gstats">'
           + '<span class="gstat plan" title="План">' + plan + '</span>'
           + '<span class="gstat done" title="Сделано">' + done + '</span>'
@@ -383,14 +498,15 @@
     var done = vids.filter(function (v) { return v.done; }).length;
     var pub = vids.filter(function (v) { return v.published; }).length;
     h += '<div class="sumline">'
-      + '<button class="sortbtn plan' + (currentSort === 'planned' ? ' on' : '') + '" data-action="sortBy" data-s="planned">план ' + plan + '</button>'
-      + '<button class="sortbtn done' + (currentSort === 'done' ? ' on' : '') + '" data-action="sortBy" data-s="done">сделано ' + done + '</button>'
-      + '<button class="sortbtn pub' + (currentSort === 'published' ? ' on' : '') + '" data-action="sortBy" data-s="published">выложено ' + pub + '</button>'
+      + '<button class="sortbtn plan' + (isOn('planned') ? ' on' : '') + '" data-action="sortBy" data-s="planned">план ' + plan + '</button>'
+      + '<button class="sortbtn done' + (isOn('done') ? ' on' : '') + '" data-action="sortBy" data-s="done">сделано ' + done + '</button>'
+      + '<button class="sortbtn pub' + (isOn('published') ? ' on' : '') + '" data-action="sortBy" data-s="published">выложено ' + pub + '</button>'
+      + (sortKeys.length ? '<button class="sortbtn" data-action="sortReset" title="Сбросить сортировку">сброс</button>' : '')
       + '</div>';
     h += '<div class="sumline">';
     state.contentTypes.forEach(function (t) {
       var cnt = vids.filter(function (v) { return v.ctype === t.id; }).length;
-      h += '<button class="ct-chip' + (currentSort === 'ctype:' + t.id ? ' on' : '') + '" data-action="sortBy" data-s="ctype:' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + ' ' + cnt + '</button>'
+      h += '<button class="ct-chip' + (isOn('ctype:' + t.id) ? ' on' : '') + '" data-action="sortBy" data-s="ctype:' + t.id + '" style="border-color:' + t.color + '"><span class="dot" style="background:' + t.color + '"></span>' + esc(t.name) + ' ' + cnt + '</button>'
         + '<button class="ct-edit" data-action="renameCtype" data-ct="' + t.id + '" title="Переименовать">✎</button>';
     });
     h += '</div>';
@@ -404,34 +520,18 @@
       h += '<button class="btn btn-ghost" data-action="toggleSelect">готово</button>';
     }
     h += '</div>';
-    if (currentSort) {
-      var ctypeSort = currentSort.indexOf('ctype:') === 0 ? currentSort.slice(6) : null;
-      vids = vids.slice().sort(function (a, b) {
-        if (ctypeSort) {
-          var ma = a.ctype === ctypeSort ? 1 : 0;
-          var mb = b.ctype === ctypeSort ? 1 : 0;
-          return mb - ma;
-        }
-        var ma = a[currentSort] ? 1 : 0;
-        var mb = b[currentSort] ? 1 : 0;
-        if (ma !== mb) return mb - ma;
-        if (ma && mb) {
-          var pa = a.priority ? 1 : 0;
-          var pb = b.priority ? 1 : 0;
-          if (pa !== pb) return pb - pa;
-        }
-        return 0;
-      });
-    }
+    var shown = sortedVideos(vids.filter(function (v) { return matchQ(v.title) || matchQ(v.plot); }));
     if (!vids.length) {
       h += '<div class="empty">Пока нет ' + (currentOrientation === 'v' ? 'вертикальных' : 'горизонтальных') + ' роликов. Нажми «+ ролик».</div>';
+    } else if (!shown.length) {
+      h += '<div class="empty">Ничего не найдено.</div>';
     } else {
       h += '<div class="vgrid">';
-      vids.forEach(function (v) {
+      shown.forEach(function (v) {
         var ct = v.ctype ? ctypeOf(v.ctype) : null;
         var sel = selected.indexOf(v.id) !== -1;
         h += '<div class="vcard' + (sel ? ' selected' : '') + '" data-action="openVideo" data-drag="video" data-id="' + v.id + '"' + (ct ? ' style="border-color:' + ct.color + '"' : '') + '>'
-          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(v.title || 'Без названия') + '</span>' + (ct ? '<span class="ct-badge" style="color:' + ct.color + '">' + esc(ct.name) + '</span>' : '') + '<button class="rbtn" data-action="renameVideoInline" data-id="' + v.id + '" title="Переименовать">✎</button></div>'
+          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(v.title || 'Без названия') + '</span>' + '<button class="rbtn" data-action="renameVideoInline" data-id="' + v.id + '" title="Переименовать">✎</button></div>'
           + '<div class="checks">'
           + '<label class="chk plan" title="План"><input type="checkbox" data-bind="planned" data-id="' + v.id + '"' + (v.planned ? ' checked' : '') + '></label>'
           + '<label class="chk done" title="Сделан"><input type="checkbox" data-bind="done" data-id="' + v.id + '"' + (v.done ? ' checked' : '') + '></label>'
@@ -533,8 +633,20 @@
         c.name = t; save(); render();
       }});
     }
-    else if (a === 'openClient') { route = { screen: 'client', clientId: btn.dataset.id }; render(); }
-    else if (a === 'backHome') { route = { screen: 'home' }; render(); }
+    else if (a === 'deleteClient') {
+      var c = findClient(btn.dataset.id);
+      if (!c) return;
+      showModal({ title: 'Удалить клиента?', msg: 'Клиент «' + c.name + '», его группы и все ролики будут удалены.', okLabel: 'Удалить', onOk: function () {
+        state.videos = state.videos.filter(function (v) { return v.clientId !== c.id; });
+        state.groups = state.groups.filter(function (x) { return x.clientId !== c.id; });
+        state.clients = state.clients.filter(function (x) { return x.id !== c.id; });
+        save();
+        route = { screen: 'home' };
+        render();
+      }});
+    }
+    else if (a === 'openClient') { clearSearch(); route = { screen: 'client', clientId: btn.dataset.id }; render(); }
+    else if (a === 'backHome') { clearSearch(); route = { screen: 'home' }; render(); }
     else if (a === 'setOrient') { currentOrientation = btn.dataset.o; render(); }
     else if (a === 'addGroup') {
       showModal({ title: 'Новая группа', input: true, placeholder: 'Название (объект, тема…)', okLabel: 'Добавить', onOk: function (name) {
@@ -546,7 +658,7 @@
     }
     else if (a === 'openGroup') {
       if (selectMode) { toggleSelected(btn.dataset.id); render(); return; }
-      route = { screen: 'group', clientId: route.clientId, groupId: btn.dataset.id }; render();
+      clearSearch(); route = { screen: 'group', clientId: route.clientId, groupId: btn.dataset.id }; render();
     }
     else if (a === 'renameGroupInline') {
       var g = findGroup(btn.dataset.id);
@@ -576,12 +688,12 @@
     }
     else if (a === 'openVideo') {
       if (selectMode) { toggleSelected(btn.dataset.id); render(); return; }
-      route = { screen: 'video', videoId: btn.dataset.id }; currentTab = 'script'; render();
+      clearSearch(); route = { screen: 'video', videoId: btn.dataset.id }; currentTab = 'script'; render();
     }
-    else if (a === 'backClient') { route = { screen: 'client', clientId: route.clientId }; render(); }
+    else if (a === 'backClient') { clearSearch(); route = { screen: 'client', clientId: route.clientId }; render(); }
     else if (a === 'backGroup') {
       var v = findVideo(route.videoId);
-      route = { screen: 'group', clientId: v.clientId, groupId: v.groupId };
+      clearSearch(); route = { screen: 'group', clientId: v.clientId, groupId: v.groupId };
       render();
     }
     else if (a === 'deleteVideo') {
@@ -608,7 +720,13 @@
       }});
     }
     else if (a === 'setTab') { currentTab = btn.dataset.t; render(); }
-    else if (a === 'sortBy') { currentSort = (currentSort === btn.dataset.s) ? null : btn.dataset.s; render(); }
+    else if (a === 'sortBy') {
+      var k = btn.dataset.s;
+      var idx = sortKeys.indexOf(k);
+      if (idx === -1) sortKeys.push(k); else sortKeys.splice(idx, 1);
+      render();
+    }
+    else if (a === 'sortReset') { sortKeys = []; render(); }
     else if (a === 'togglePrio') {
       var v = findVideo(btn.dataset.id);
       if (!v) return;
@@ -642,8 +760,11 @@
     }
     else if (a === 'delScriptRow') {
       var v = findVideo(btn.dataset.id);
-      v.script = v.script.filter(function (r) { return r.id !== btn.dataset.row; });
-      save(); render();
+      var rowId = btn.dataset.row;
+      showModal({ title: 'Удалить кадр?', msg: 'Кадр сценария будет удалён.', okLabel: 'Удалить', onOk: function () {
+        v.script = v.script.filter(function (r) { return r.id !== rowId; });
+        save(); render();
+      }});
     }
     else if (a === 'toggleScript') {
       var v = findVideo(btn.dataset.id);
@@ -673,8 +794,11 @@
     }
     else if (a === 'delStory') {
       var v = findVideo(btn.dataset.id);
-      v.storyboard = v.storyboard.filter(function (r) { return r.id !== btn.dataset.row; });
-      save(); render();
+      var rowId = btn.dataset.row;
+      showModal({ title: 'Удалить кадр?', msg: 'Кадр раскадровки будет удалён.', okLabel: 'Удалить', onOk: function () {
+        v.storyboard = v.storyboard.filter(function (r) { return r.id !== rowId; });
+        save(); render();
+      }});
     }
     else if (a === 'addStoryImg') {
       pendingImage = { videoId: btn.dataset.id, rowId: btn.dataset.row };
@@ -682,8 +806,11 @@
     }
     else if (a === 'delStoryImg') {
       var v = findVideo(btn.dataset.id);
-      var row = v.storyboard.filter(function (r) { return r.id === btn.dataset.row; })[0];
-      if (row) { row.img = ''; save(); render(); }
+      var rowId = btn.dataset.row;
+      showModal({ title: 'Убрать фото?', msg: 'Картинка кадра будет убрана.', okLabel: 'Убрать', onOk: function () {
+        var row = v.storyboard.filter(function (r) { return r.id === rowId; })[0];
+        if (row) { row.img = ''; save(); render(); }
+      }});
     }
     else if (a === 'toggleStory') {
       var v = findVideo(btn.dataset.id);
@@ -709,6 +836,8 @@
       link.download = 'producer-space.json';
       link.click();
       URL.revokeObjectURL(link.href);
+      try { localStorage.setItem('producer-last-backup', String(Date.now())); } catch (e) {}
+      render();
     }
     else if (a === 'importData') { importInput.click(); }
   });
@@ -822,14 +951,25 @@
     var h = '<div class="ctx-title">Переместить к клиенту:</div>';
     if (!others.length) h += '<div class="ctx-item muted">нет других клиентов</div>';
     others.forEach(function (c) {
-      h += '<div class="ctx-item" data-action="moveItem" data-type="' + type + '" data-id="' + id + '" data-client="' + c.id + '">' + esc(c.name) + '</div>';
+      if (type === 'video') {
+        var cg = state.groups.filter(function (g) { return g.clientId === c.id; });
+        if (!cg.length) {
+          h += '<div class="ctx-item" data-action="moveItem" data-type="' + type + '" data-id="' + id + '" data-client="' + c.id + '" data-group="">' + esc(c.name) + ' · (новая «Общее»)</div>';
+        } else {
+          cg.forEach(function (g) {
+            h += '<div class="ctx-item" data-action="moveItem" data-type="' + type + '" data-id="' + id + '" data-client="' + c.id + '" data-group="' + g.id + '">' + esc(c.name) + ' · ' + esc(g.name) + '</div>';
+          });
+        }
+      } else {
+        h += '<div class="ctx-item" data-action="moveItem" data-type="' + type + '" data-id="' + id + '" data-client="' + c.id + '">' + esc(c.name) + '</div>';
+      }
     });
     ctxMenu.innerHTML = h;
     ctxMenu.style.display = 'block';
     ctxMenu.style.left = x + 'px';
     ctxMenu.style.top = y + 'px';
   }
-  function moveToClient(type, id, clientId) {
+  function moveToClient(type, id, clientId, targetGroupId) {
     if (type === 'group') {
       var g = findGroup(id);
       if (!g) return;
@@ -839,7 +979,8 @@
       var v = findVideo(id);
       if (!v) return;
       v.clientId = clientId;
-      var tg = state.groups.filter(function (x) { return x.clientId === clientId; })[0];
+      var tg = targetGroupId ? findGroup(targetGroupId) : null;
+      if (!tg || tg.clientId !== clientId) tg = state.groups.filter(function (x) { return x.clientId === clientId; })[0];
       if (!tg) { tg = { id: uid(), clientId: clientId, name: 'Общее' }; state.groups.push(tg); }
       v.groupId = tg.id;
     }
@@ -857,7 +998,7 @@
   ctxMenu.addEventListener('click', function (e) {
     var item = e.target.closest('[data-action="moveItem"]');
     if (item) {
-      moveToClient(item.dataset.type, item.dataset.id, item.dataset.client);
+      moveToClient(item.dataset.type, item.dataset.id, item.dataset.client, item.dataset.group);
       save(); render();
     }
     hideCtxMenu();
@@ -865,6 +1006,10 @@
   document.addEventListener('click', function (e) {
     if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target)) hideCtxMenu();
   });
+
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('redoBtn').addEventListener('click', redo);
+  document.getElementById('searchInput').addEventListener('input', function () { currentQuery = (this.value || '').toLowerCase(); render(); });
 
   importInput.addEventListener('change', function () {
     var file = importInput.files[0];
@@ -900,6 +1045,11 @@
         var dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         var v = findVideo(target.videoId);
         var row = v.storyboard.filter(function (r) { return r.id === target.rowId; })[0];
+        var existing = (row && row.img) ? row.img.length : 0;
+        if (totalImageBytes() - existing + dataUrl.length > IMG_TOTAL_MAX) {
+          showModal({ title: 'Лимит картинок', msg: 'Слишком много фото — хранилище браузера (~5 МБ) переполнится. Убери часть фото из раскадровки.', cancelable: false });
+          return;
+        }
         if (row) { row.img = dataUrl; save(); render(); }
       };
       img.src = reader.result;
@@ -908,6 +1058,7 @@
   });
 
   render();
+  updateUndoButtons();
 })();
 </script>
 </body>
