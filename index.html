@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Продюсерский органайзер</title>
 <style>
-  :root { --bg:#0c0c0e; --fg:#f5f5f7; --muted:#9a9aa2; --card:#18181c; --line:#2c2c32; --red:#ff3b30; --green:#30d158; }
+  :root { --bg:#0c0c0e; --fg:#f5f5f7; --muted:#9a9aa2; --card:#18181c; --line:#2c2c32; --red:#ff3b30; --green:#30d158; --yellow:#ffd60a; --purple:#bf5af2; }
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { height:100%; }
   body { background:var(--bg); color:var(--fg); font-family:-apple-system,'Segoe UI',Roboto,sans-serif; -webkit-tap-highlight-color:transparent; }
@@ -42,7 +42,7 @@
   .vcard { display:flex; flex-direction:column; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; cursor:pointer; min-height:86px; }
   .vcard:hover { border-color:#3a3a42; }
   .vt-row { display:flex; align-items:center; justify-content:space-between; gap:6px; }
-  .vcard .vt { font-size:16px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .vcard .vt { flex:1; min-width:0; font-size:16px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rbtn { flex:none; background:transparent; border:none; color:var(--muted); font-size:15px; padding:2px 6px; border-radius:6px; }
   .rbtn:hover { color:var(--fg); background:#2a2a2e; }
   .badge { align-self:flex-start; font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; }
@@ -50,14 +50,27 @@
   .badge-h { background:rgba(255,59,48,.18); color:var(--red); }
   .grow { display:flex; align-items:center; justify-content:space-between; margin-top:auto; }
   .gcount { font-size:13px; color:var(--muted); }
-  .checks { display:flex; gap:14px; margin-top:auto; }
-  .chk { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); cursor:pointer; }
-  .chk input { width:15px; height:15px; cursor:pointer; }
-  .chk.done input { accent-color:var(--green); }
-  .chk.pub input { accent-color:var(--red); }
-  .chk input:checked ~ span { font-weight:600; }
-  .chk.done input:checked ~ span { color:var(--green); }
-  .chk.pub input:checked ~ span { color:var(--red); }
+  .gstats { display:flex; align-items:center; gap:10px; font-size:14px; font-weight:700; }
+  .gstat.plan { color:var(--red); }
+  .gstat.done { color:var(--yellow); }
+  .gstat.pub { color:var(--green); }
+  .sumline { display:flex; gap:14px; align-items:center; margin-bottom:12px; font-size:13px; font-weight:600; flex-wrap:wrap; }
+  .checks { display:flex; gap:8px; margin-top:auto; }
+  .chk { display:flex; align-items:center; cursor:pointer; }
+  .chk input {
+    -webkit-appearance:none; appearance:none;
+    width:18px; height:18px; border-radius:5px;
+    border:2px solid var(--c, #4a4a52); background:transparent;
+    cursor:pointer; margin:0; transition:background .12s;
+  }
+  .chk input:checked { background:var(--c); }
+  .chk.plan input { --c: var(--red); }
+  .chk.done input { --c: var(--yellow); }
+  .chk.pub input { --c: var(--green); }
+
+  .drag-handle { flex:none; cursor:grab; color:var(--muted); font-size:14px; line-height:1; padding:2px 4px; user-select:none; }
+  .drag-handle:active { cursor:grabbing; }
+  .drag-over { border-color:var(--red) !important; }
 
   /* Ролик */
   .plot-box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px; }
@@ -102,18 +115,29 @@
   .title.clickable { cursor:pointer; }
   .title.clickable:hover { text-decoration:underline; }
 
-  .scard { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin-bottom:8px; }
-  .scard-head { display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:6px; }
+  .script-cards { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:start; }
+  .scard { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 10px; }
+  .scard.loc-yellow { border-color:var(--yellow); }
+  .scard.loc-purple { border-color:var(--purple); }
+  .scard.loc-green { border-color:var(--green); }
+  .scard-head { display:flex; align-items:center; gap:8px; cursor:pointer; }
   .scard.collapsed .scard-head { margin-bottom:0; }
   .scard-num { font-size:13px; color:var(--muted); font-weight:600; flex:none; }
   .scard-num .chev { display:inline-block; width:12px; color:var(--muted); }
-  .scard-summary { flex:1; font-size:13px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .scard-body { display:block; }
+  .scard-summary { flex:1; font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .scard-body { display:block; margin-top:8px; }
   .scard.collapsed .scard-body { display:none; }
-  .scard-row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .scard label { display:block; font-size:11px; color:var(--muted); margin:6px 0 3px; }
-  .scard input, .scard textarea { width:100%; background:#101014; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; line-height:1.4; outline:none; resize:vertical; }
+  .scard-row2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .scard label { display:block; font-size:11px; color:var(--muted); margin:5px 0 2px; }
+  .scard input, .scard textarea { width:100%; background:#101014; border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:13px; line-height:1.35; outline:none; resize:vertical; }
   .scard input:focus, .scard textarea:focus { border-color:var(--red); }
+  .loc-row { display:flex; align-items:center; gap:6px; margin-top:8px; }
+  .loc-row .loc-label { font-size:11px; color:var(--muted); flex:none; }
+  .loc-dot { width:20px; height:20px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0; flex:none; }
+  .loc-dot.yellow { background:var(--yellow); }
+  .loc-dot.purple { background:var(--purple); }
+  .loc-dot.green { background:var(--green); }
+  .loc-dot.on { border-color:#fff; }
 
   .save-hint { margin-top:16px; text-align:center; color:var(--muted); font-size:12px; }
 
@@ -174,6 +198,7 @@
         if (!g) { g = { id: uid(), clientId: v.clientId, name: 'Общее' }; s.groups.push(g); }
         v.groupId = g.id;
       }
+      (v.script || []).forEach(function (r) { if (r.collapsed === undefined) r.collapsed = true; });
     });
     return s;
   }
@@ -232,10 +257,17 @@
     } else {
       h += '<div class="clist">';
       state.clients.forEach(function (c) {
-        var vids = state.videos.filter(function (v) { return v.clientId === c.id; }).length;
+        var cvids = state.videos.filter(function (v) { return v.clientId === c.id; });
+        var plan = cvids.filter(function (v) { return v.planned; }).length;
+        var done = cvids.filter(function (v) { return v.done; }).length;
+        var pub = cvids.filter(function (v) { return v.published; }).length;
         h += '<div class="ccard" data-action="openClient" data-id="' + c.id + '">'
           + '<span class="name">' + esc(c.name) + '</span>'
-          + '<span class="count">роликов: ' + vids + '</span>'
+          + '<span class="gstats">'
+          + '<span class="gstat plan" title="План">' + plan + '</span>'
+          + '<span class="gstat done" title="Сделано">' + done + '</span>'
+          + '<span class="gstat pub" title="Выложено">' + pub + '</span>'
+          + '</span>'
           + '</div>';
       });
       h += '</div>';
@@ -254,10 +286,17 @@
     } else {
       h += '<div class="vgrid">';
       groups.forEach(function (g) {
-        var count = state.videos.filter(function (v) { return v.groupId === g.id; }).length;
-        h += '<div class="vcard groupcard" data-action="openGroup" data-id="' + g.id + '">'
-          + '<div class="vt-row"><span class="vt">' + esc(g.name) + '</span><button class="rbtn" data-action="renameGroupInline" data-id="' + g.id + '" title="Переименовать">✎</button></div>'
-          + '<div class="grow"><span class="gcount">роликов: ' + count + '</span><button class="btn-del" data-action="deleteGroup" data-id="' + g.id + '" title="Удалить группу">✕</button></div>'
+        var vids = state.videos.filter(function (v) { return v.groupId === g.id; });
+        var plan = vids.filter(function (v) { return v.planned; }).length;
+        var done = vids.filter(function (v) { return v.done; }).length;
+        var pub = vids.filter(function (v) { return v.published; }).length;
+        h += '<div class="vcard groupcard" data-action="openGroup" data-drag="group" data-id="' + g.id + '">'
+          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(g.name) + '</span><button class="rbtn" data-action="renameGroupInline" data-id="' + g.id + '" title="Переименовать">✎</button></div>'
+          + '<div class="grow"><span class="gstats">'
+          + '<span class="gstat plan" title="План">' + plan + '</span>'
+          + '<span class="gstat done" title="Сделано">' + done + '</span>'
+          + '<span class="gstat pub" title="Выложено">' + pub + '</span>'
+          + '</span><button class="btn-del" data-action="deleteGroup" data-id="' + g.id + '" title="Удалить группу">✕</button></div>'
           + '</div>';
       });
       h += '</div>';
@@ -274,16 +313,21 @@
       + '<button class="' + (currentOrientation === 'h' ? 'on-h' : '') + '" data-action="setOrient" data-o="h">Горизонтальные</button>'
       + '</div>';
     var vids = state.videos.filter(function (v) { return v.groupId === g.id && v.orientation === currentOrientation; });
+    var plan = vids.filter(function (v) { return v.planned; }).length;
+    var done = vids.filter(function (v) { return v.done; }).length;
+    var pub = vids.filter(function (v) { return v.published; }).length;
+    h += '<div class="sumline"><span class="gstat plan" title="План">план ' + plan + '</span><span class="gstat done" title="Сделано">сделано ' + done + '</span><span class="gstat pub" title="Выложено">выложено ' + pub + '</span></div>';
     if (!vids.length) {
       h += '<div class="empty">Пока нет ' + (currentOrientation === 'v' ? 'вертикальных' : 'горизонтальных') + ' роликов. Нажми «+ ролик».</div>';
     } else {
       h += '<div class="vgrid">';
       vids.forEach(function (v) {
-        h += '<div class="vcard" data-action="openVideo" data-id="' + v.id + '">'
-          + '<div class="vt-row"><span class="vt">' + esc(v.title || 'Без названия') + '</span><button class="rbtn" data-action="renameVideoInline" data-id="' + v.id + '" title="Переименовать">✎</button></div>'
+        h += '<div class="vcard" data-action="openVideo" data-drag="video" data-id="' + v.id + '">'
+          + '<div class="vt-row"><span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span><span class="vt">' + esc(v.title || 'Без названия') + '</span><button class="rbtn" data-action="renameVideoInline" data-id="' + v.id + '" title="Переименовать">✎</button></div>'
           + '<div class="checks">'
-          + '<label class="chk done" title="Сделан"><input type="checkbox" data-bind="done" data-id="' + v.id + '"' + (v.done ? ' checked' : '') + '><span>сделан</span></label>'
-          + '<label class="chk pub" title="Выложен"><input type="checkbox" data-bind="published" data-id="' + v.id + '"' + (v.published ? ' checked' : '') + '><span>выложен</span></label>'
+          + '<label class="chk plan" title="План"><input type="checkbox" data-bind="planned" data-id="' + v.id + '"' + (v.planned ? ' checked' : '') + '></label>'
+          + '<label class="chk done" title="Сделан"><input type="checkbox" data-bind="done" data-id="' + v.id + '"' + (v.done ? ' checked' : '') + '></label>'
+          + '<label class="chk pub" title="Выложен"><input type="checkbox" data-bind="published" data-id="' + v.id + '"' + (v.published ? ' checked' : '') + '></label>'
           + '</div>'
           + '</div>';
       });
@@ -307,15 +351,25 @@
     if (currentTab === 'script') {
       h += '<div class="script-cards">';
       (v.script || []).forEach(function (row, i) {
-        h += '<div class="scard' + (row.collapsed ? ' collapsed' : '') + '">'
+        var loc = row.color || '';
+        var summary = [row.location, row.inFrame].filter(Boolean).join(' · ');
+        if (summary.length > 40) summary = summary.slice(0, 40) + '…';
+        h += '<div class="scard' + (row.collapsed ? ' collapsed' : '') + (loc ? ' loc-' + loc : '') + '" data-drag="script" data-id="' + row.id + '">'
           + '<div class="scard-head" data-action="toggleScript" data-id="' + v.id + '" data-row="' + row.id + '">'
+          + '<span class="drag-handle" draggable="true" data-drag-handle="1" title="Перетащить">≡</span>'
           + '<span class="scard-num"><span class="chev">' + (row.collapsed ? '▸' : '▾') + '</span> Кадр ' + (i + 1) + '</span>'
+          + '<span class="scard-summary">' + esc(summary) + '</span>'
           + '<button class="btn-del" data-action="delScriptRow" data-id="' + v.id + '" data-row="' + row.id + '">✕</button>'
           + '</div>'
           + '<div class="scard-body">'
           + '<div class="scard-row2"><div><label>Локация</label><input data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="location" value="' + esc(row.location) + '"></div><div><label>План</label><input data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="shot" value="' + esc(row.shot) + '"></div></div>'
           + '<label>Что в кадре</label><textarea data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="inFrame" rows="2">' + esc(row.inFrame) + '</textarea>'
           + '<label>Звук / реплики</label><textarea data-bind="sf" data-id="' + v.id + '" data-row="' + row.id + '" data-field="sound" rows="2">' + esc(row.sound) + '</textarea>'
+          + '<div class="loc-row"><span class="loc-label">Локация:</span>'
+          + '<button class="loc-dot yellow' + (loc === 'yellow' ? ' on' : '') + '" data-action="setLoc" data-id="' + v.id + '" data-row="' + row.id + '" data-color="yellow" title="Жёлтая"></button>'
+          + '<button class="loc-dot purple' + (loc === 'purple' ? ' on' : '') + '" data-action="setLoc" data-id="' + v.id + '" data-row="' + row.id + '" data-color="purple" title="Фиолетовая"></button>'
+          + '<button class="loc-dot green' + (loc === 'green' ? ' on' : '') + '" data-action="setLoc" data-id="' + v.id + '" data-row="' + row.id + '" data-color="green" title="Зелёная"></button>'
+          + '</div>'
           + '</div>'
           + '</div>';
       });
@@ -348,6 +402,7 @@
   // --- события ---
   app.addEventListener('click', function (e) {
     if (e.target.closest('label.chk')) return;
+    if (e.target.closest('[data-drag-handle]')) return;
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
     var a = btn.dataset.action;
@@ -432,7 +487,7 @@
     else if (a === 'addScriptRow') {
       var v = findVideo(btn.dataset.id);
       v.script = v.script || [];
-      v.script.push({ id: uid(), location: '', shot: '', inFrame: '', sound: '' });
+      v.script.push({ id: uid(), location: '', shot: '', inFrame: '', sound: '', collapsed: true, color: '' });
       save(); render();
     }
     else if (a === 'delScriptRow') {
@@ -452,6 +507,13 @@
         if (chev) chev.textContent = row.collapsed ? '▸' : '▾';
       }
       save();
+    }
+    else if (a === 'setLoc') {
+      var v = findVideo(btn.dataset.id);
+      var row = v.script.filter(function (r) { return r.id === btn.dataset.row; })[0];
+      if (!row) return;
+      row.color = (row.color === btn.dataset.color) ? '' : btn.dataset.color;
+      save(); render();
     }
     else if (a === 'addStory') {
       var v = findVideo(btn.dataset.id);
@@ -523,9 +585,83 @@
     if (el.tagName !== 'INPUT' || el.type !== 'checkbox') return;
     var v = findVideo(el.dataset.id);
     if (!v) return;
-    if (el.dataset.bind === 'done') v.done = el.checked;
+    if (el.dataset.bind === 'planned') v.planned = el.checked;
+    else if (el.dataset.bind === 'done') v.done = el.checked;
     else if (el.dataset.bind === 'published') v.published = el.checked;
     save();
+  });
+
+  // --- перетаскивание: порядок групп / роликов / кадров ---
+  var dragInfo = null;
+
+  function reorderList(arr, dragId, targetId) {
+    var from = -1, to = -1, i;
+    for (i = 0; i < arr.length; i++) {
+      if (arr[i].id === dragId) from = i;
+      if (arr[i].id === targetId) to = i;
+    }
+    if (from === -1 || to === -1 || from === to) return;
+    var item = arr.splice(from, 1)[0];
+    arr.splice(to, 0, item);
+  }
+  function reorderGroups(clientId, dragId, targetId) {
+    var mine = state.groups.filter(function (g) { return g.clientId === clientId; });
+    var others = state.groups.filter(function (g) { return g.clientId !== clientId; });
+    reorderList(mine, dragId, targetId);
+    state.groups = others.concat(mine);
+  }
+  function reorderVideos(groupId, orientation, dragId, targetId) {
+    var mine = state.videos.filter(function (v) { return v.groupId === groupId && v.orientation === orientation; });
+    var others = state.videos.filter(function (v) { return !(v.groupId === groupId && v.orientation === orientation); });
+    reorderList(mine, dragId, targetId);
+    state.videos = others.concat(mine);
+  }
+  function applyReorder(type, dragId, targetId) {
+    if (type === 'script') {
+      var v = findVideo(route.videoId);
+      reorderList(v.script || [], dragId, targetId);
+    } else if (type === 'video') {
+      reorderVideos(route.groupId, currentOrientation, dragId, targetId);
+    } else if (type === 'group') {
+      reorderGroups(route.clientId, dragId, targetId);
+    }
+  }
+
+  app.addEventListener('dragstart', function (e) {
+    var handle = e.target.closest('[data-drag-handle]');
+    if (!handle) return;
+    var card = handle.closest('[data-drag]');
+    if (!card) return;
+    dragInfo = { type: card.dataset.drag, id: card.dataset.id };
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', card.dataset.id); } catch (err) {}
+  });
+  app.addEventListener('dragover', function (e) {
+    if (!dragInfo) return;
+    var card = e.target.closest('[data-drag]');
+    if (!card || card.dataset.drag !== dragInfo.type) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    card.classList.add('drag-over');
+  });
+  app.addEventListener('dragleave', function (e) {
+    var card = e.target.closest('[data-drag]');
+    if (card) card.classList.remove('drag-over');
+  });
+  app.addEventListener('drop', function (e) {
+    var card = e.target.closest('[data-drag]');
+    document.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+    if (!card || !dragInfo || card.dataset.drag !== dragInfo.type) { dragInfo = null; return; }
+    e.preventDefault();
+    if (card.dataset.id !== dragInfo.id) {
+      applyReorder(dragInfo.type, dragInfo.id, card.dataset.id);
+      save(); render();
+    }
+    dragInfo = null;
+  });
+  app.addEventListener('dragend', function () {
+    document.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+    dragInfo = null;
   });
 
   importInput.addEventListener('change', function () {
