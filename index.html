@@ -34,8 +34,7 @@
   /* Переключатель верт/гориз */
   .toggle { display:flex; border-radius:12px; overflow:hidden; border:1px solid var(--line); margin-bottom:14px; }
   .toggle button { flex:1; padding:11px; background:var(--card); color:var(--muted); border:none; font-size:15px; font-weight:600; }
-  .toggle button.on-v { background:var(--green); color:#04120a; }
-  .toggle button.on-h { background:var(--red); color:#fff; }
+  .toggle button.on { background:#e8e8ec; color:#0c0c0e; }
 
   /* Сетка роликов */
   .vgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
@@ -54,7 +53,14 @@
   .gstat.plan { color:var(--red); }
   .gstat.done { color:var(--yellow); }
   .gstat.pub { color:var(--green); }
-  .sumline { display:flex; gap:14px; align-items:center; margin-bottom:12px; font-size:13px; font-weight:600; flex-wrap:wrap; }
+  .sumline { display:flex; gap:8px; align-items:center; margin-bottom:12px; font-size:13px; font-weight:600; flex-wrap:wrap; }
+  .sortbtn { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:5px 10px; font-size:13px; font-weight:600; cursor:pointer; color:var(--muted); }
+  .sortbtn.plan { color:var(--red); }
+  .sortbtn.done { color:var(--yellow); }
+  .sortbtn.pub { color:var(--green); }
+  .sortbtn.on { background:rgba(255,255,255,.08); }
+  .prio-btn { background:transparent; border:none; cursor:pointer; font-size:17px; line-height:1; padding:2px 4px; color:var(--muted); opacity:.35; margin-left:auto; }
+  .prio-btn.on { color:#ff9500; opacity:1; }
   .checks { display:flex; gap:8px; margin-top:auto; }
   .chk { display:flex; align-items:center; cursor:pointer; }
   .chk input {
@@ -242,6 +248,7 @@
   var route = { screen: 'home' };
   var currentOrientation = 'v';
   var currentTab = 'script';
+  var currentSort = null;
 
   function render() {
     if (route.screen === 'home') renderHome();
@@ -309,14 +316,31 @@
     if (!g) { route = { screen: 'home' }; render(); return; }
     var h = '<div class="topbar"><button class="btn btn-back" data-action="backClient">← Назад</button><div class="title">' + esc(g.name) + '</div><button class="btn btn-add" data-action="addVideo">+ ролик</button></div>';
     h += '<div class="toggle">'
-      + '<button class="' + (currentOrientation === 'v' ? 'on-v' : '') + '" data-action="setOrient" data-o="v">Вертикальные</button>'
-      + '<button class="' + (currentOrientation === 'h' ? 'on-h' : '') + '" data-action="setOrient" data-o="h">Горизонтальные</button>'
+      + '<button class="' + (currentOrientation === 'v' ? 'on' : '') + '" data-action="setOrient" data-o="v">Вертикальные</button>'
+      + '<button class="' + (currentOrientation === 'h' ? 'on' : '') + '" data-action="setOrient" data-o="h">Горизонтальные</button>'
       + '</div>';
     var vids = state.videos.filter(function (v) { return v.groupId === g.id && v.orientation === currentOrientation; });
     var plan = vids.filter(function (v) { return v.planned; }).length;
     var done = vids.filter(function (v) { return v.done; }).length;
     var pub = vids.filter(function (v) { return v.published; }).length;
-    h += '<div class="sumline"><span class="gstat plan" title="План">план ' + plan + '</span><span class="gstat done" title="Сделано">сделано ' + done + '</span><span class="gstat pub" title="Выложено">выложено ' + pub + '</span></div>';
+    h += '<div class="sumline">'
+      + '<button class="sortbtn plan' + (currentSort === 'planned' ? ' on' : '') + '" data-action="sortBy" data-s="planned">план ' + plan + '</button>'
+      + '<button class="sortbtn done' + (currentSort === 'done' ? ' on' : '') + '" data-action="sortBy" data-s="done">сделано ' + done + '</button>'
+      + '<button class="sortbtn pub' + (currentSort === 'published' ? ' on' : '') + '" data-action="sortBy" data-s="published">выложено ' + pub + '</button>'
+      + '</div>';
+    if (currentSort) {
+      vids = vids.slice().sort(function (a, b) {
+        var ma = a[currentSort] ? 1 : 0;
+        var mb = b[currentSort] ? 1 : 0;
+        if (ma !== mb) return mb - ma;
+        if (ma && mb) {
+          var pa = a.priority ? 1 : 0;
+          var pb = b.priority ? 1 : 0;
+          if (pa !== pb) return pb - pa;
+        }
+        return 0;
+      });
+    }
     if (!vids.length) {
       h += '<div class="empty">Пока нет ' + (currentOrientation === 'v' ? 'вертикальных' : 'горизонтальных') + ' роликов. Нажми «+ ролик».</div>';
     } else {
@@ -328,6 +352,7 @@
           + '<label class="chk plan" title="План"><input type="checkbox" data-bind="planned" data-id="' + v.id + '"' + (v.planned ? ' checked' : '') + '></label>'
           + '<label class="chk done" title="Сделан"><input type="checkbox" data-bind="done" data-id="' + v.id + '"' + (v.done ? ' checked' : '') + '></label>'
           + '<label class="chk pub" title="Выложен"><input type="checkbox" data-bind="published" data-id="' + v.id + '"' + (v.published ? ' checked' : '') + '></label>'
+          + '<button class="prio-btn' + (v.priority ? ' on' : '') + '" data-action="togglePrio" data-id="' + v.id + '" title="Высокий приоритет">⚠</button>'
           + '</div>'
           + '</div>';
       });
@@ -484,6 +509,13 @@
       }});
     }
     else if (a === 'setTab') { currentTab = btn.dataset.t; render(); }
+    else if (a === 'sortBy') { currentSort = (currentSort === btn.dataset.s) ? null : btn.dataset.s; render(); }
+    else if (a === 'togglePrio') {
+      var v = findVideo(btn.dataset.id);
+      if (!v) return;
+      v.priority = !v.priority;
+      save(); render();
+    }
     else if (a === 'addScriptRow') {
       var v = findVideo(btn.dataset.id);
       v.script = v.script || [];
