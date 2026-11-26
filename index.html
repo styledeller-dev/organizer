@@ -166,6 +166,11 @@
   .modal-box input { background:#101014; border:1px solid var(--line); border-radius:10px; padding:12px; font-size:16px; outline:none; color:var(--fg); }
   .modal-box input:focus { border-color:var(--red); }
   .modal-btns { display:flex; gap:10px; justify-content:flex-end; }
+  .ctxmenu { position:fixed; z-index:300; background:#1a1a1e; border:1px solid var(--line); border-radius:12px; padding:6px; min-width:190px; display:none; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+  .ctx-title { font-size:11px; color:var(--muted); padding:6px 10px 4px; text-transform:uppercase; letter-spacing:.4px; }
+  .ctx-item { font-size:14px; padding:8px 10px; border-radius:8px; cursor:pointer; }
+  .ctx-item:hover { background:#2a2a2e; }
+  .ctx-item.muted { color:var(--muted); cursor:default; }
 </style>
 </head>
 <body>
@@ -184,6 +189,7 @@
 <input type="file" id="importInput" accept=".json" style="display:none">
 <input type="file" id="imgInput" accept="image/*" style="display:none">
 <div id="lightbox" style="display:none;"><img id="lightboxImg" src="" alt=""></div>
+<div id="ctxmenu" class="ctxmenu"></div>
 <script>
 (function () {
   var STORAGE_KEY = 'producer-space-v1';
@@ -200,6 +206,7 @@
   var pendingImage = null;
   var lightbox = document.getElementById('lightbox');
   var lightboxImg = document.getElementById('lightboxImg');
+  var ctxMenu = document.getElementById('ctxmenu');
 
   function defaultContentTypes() {
     return [
@@ -300,6 +307,7 @@
           + '<span class="gstat done" title="Сделано">' + done + '</span>'
           + '<span class="gstat pub" title="Выложено">' + pub + '</span>'
           + '</span>'
+          + '<button class="rbtn" data-action="renameClient" data-id="' + c.id + '" title="Переименовать">✎</button>'
           + '</div>';
       });
       h += '</div>';
@@ -311,7 +319,7 @@
   function renderClient() {
     var c = findClient(route.clientId);
     if (!c) { route = { screen: 'home' }; render(); return; }
-    var h = '<div class="topbar"><button class="btn btn-back" data-action="backHome">← Назад</button><div class="title">' + esc(c.name) + '</div><button class="btn btn-add" data-action="addGroup">+ группа</button></div>';
+    var h = '<div class="topbar"><button class="btn btn-back" data-action="backHome">← Назад</button><div class="title clickable" data-action="renameClient" data-id="' + c.id + '" title="Переименовать">' + esc(c.name) + '</div><button class="btn btn-add" data-action="addGroup">+ группа</button></div>';
     var groups = state.groups.filter(function (g) { return g.clientId === c.id; });
     h += '<div class="sumline">';
     state.contentTypes.forEach(function (t) {
@@ -513,6 +521,15 @@
         if (!name) return;
         state.clients.push({ id: uid(), name: name });
         save(); render();
+      }});
+    }
+    else if (a === 'renameClient') {
+      var c = findClient(btn.dataset.id);
+      if (!c) return;
+      showModal({ title: 'Имя клиента', input: true, value: c.name, okLabel: 'Сохранить', onOk: function (t) {
+        t = (t || '').trim();
+        if (!t) return;
+        c.name = t; save(); render();
       }});
     }
     else if (a === 'openClient') { route = { screen: 'client', clientId: btn.dataset.id }; render(); }
@@ -794,6 +811,58 @@
   app.addEventListener('dragend', function () {
     document.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
     dragInfo = null;
+  });
+
+  // --- контекстное меню: переместить группу/ролик к другому клиенту ---
+  function hideCtxMenu() { ctxMenu.style.display = 'none'; }
+  function showCtxMenu(x, y, type, id) {
+    var currentClientId = (type === 'group') ? (findGroup(id) ? findGroup(id).clientId : null) : (findVideo(id) ? findVideo(id).clientId : null);
+    var others = state.clients.filter(function (c) { return c.id !== currentClientId; });
+    var h = '<div class="ctx-title">Переместить к клиенту:</div>';
+    if (!others.length) h += '<div class="ctx-item muted">нет других клиентов</div>';
+    others.forEach(function (c) {
+      h += '<div class="ctx-item" data-action="moveItem" data-type="' + type + '" data-id="' + id + '" data-client="' + c.id + '">' + esc(c.name) + '</div>';
+    });
+    ctxMenu.innerHTML = h;
+    ctxMenu.style.display = 'block';
+    ctxMenu.style.left = x + 'px';
+    ctxMenu.style.top = y + 'px';
+  }
+  function moveToClient(type, id, clientId) {
+    if (type === 'group') {
+      var g = findGroup(id);
+      if (!g) return;
+      g.clientId = clientId;
+      state.videos.forEach(function (v) { if (v.groupId === g.id) v.clientId = clientId; });
+    } else if (type === 'video') {
+      var v = findVideo(id);
+      if (!v) return;
+      v.clientId = clientId;
+      var tg = state.groups.filter(function (x) { return x.clientId === clientId; })[0];
+      if (!tg) { tg = { id: uid(), clientId: clientId, name: 'Общее' }; state.groups.push(tg); }
+      v.groupId = tg.id;
+    }
+  }
+
+  app.addEventListener('contextmenu', function (e) {
+    if (selectMode) return;
+    var card = e.target.closest('[data-drag]');
+    if (!card) return;
+    var type = card.dataset.drag;
+    if (type !== 'group' && type !== 'video') return;
+    e.preventDefault();
+    showCtxMenu(e.clientX, e.clientY, type, card.dataset.id);
+  });
+  ctxMenu.addEventListener('click', function (e) {
+    var item = e.target.closest('[data-action="moveItem"]');
+    if (item) {
+      moveToClient(item.dataset.type, item.dataset.id, item.dataset.client);
+      save(); render();
+    }
+    hideCtxMenu();
+  });
+  document.addEventListener('click', function (e) {
+    if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target)) hideCtxMenu();
   });
 
   importInput.addEventListener('change', function () {
