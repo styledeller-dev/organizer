@@ -95,6 +95,10 @@
   .plot-box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px; }
   .plot-box label { display:block; font-size:12px; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.4px; }
   .plot-box textarea { width:100%; background:transparent; border:none; outline:none; resize:vertical; font-size:16px; line-height:1.5; min-height:56px; }
+  .ref-box input { width:100%; background:transparent; border:1px solid var(--line); border-radius:8px; padding:9px 10px; outline:none; color:var(--fg); font-size:14px; margin-top:4px; }
+  .ref-box input:focus { border-color:var(--red); }
+  .ref-link { display:block; margin-top:8px; font-size:12px; color:var(--red); word-break:break-all; text-decoration:none; }
+  .ref-link:hover { text-decoration:underline; }
 
   .tabs { display:flex; border-radius:12px; overflow:hidden; border:1px solid var(--line); margin-bottom:14px; }
   .tabs button { flex:1; padding:11px; background:var(--card); color:var(--muted); border:none; font-size:15px; font-weight:600; }
@@ -331,6 +335,7 @@
     var i = selected.indexOf(id);
     if (i === -1) selected.push(id); else selected.splice(i, 1);
   }
+  function isHttpUrl(s) { s = (s || '').trim(); return /^https?:\/\//i.test(s); }
   function matchQ(s) { return !currentQuery || (s || '').toLowerCase().indexOf(currentQuery) !== -1; }
   function isOn(k) { return sortKeys.indexOf(k) !== -1; }
   function cmpMatch(a, b, k) {
@@ -562,6 +567,10 @@
     var h = '<div class="topbar"><button class="btn btn-back" data-action="backGroup">← Назад</button><div class="title clickable" data-action="renameVideo" title="Переименовать">' + esc(v.title || 'Без названия') + '</div><button class="btn btn-del" data-action="deleteVideo" title="Удалить ролик">✕</button></div>';
 
     h += '<div class="plot-box"><label>Сюжет</label><textarea data-bind="plot" data-id="' + v.id + '" placeholder="О чём ролик в двух словах…">' + esc(v.plot || '') + '</textarea></div>';
+
+    h += '<div class="plot-box ref-box"><label>Референс</label><input data-bind="reference" data-id="' + v.id + '" value="' + esc(v.reference || '') + '" placeholder="Ссылка на видео-референс…">'
+      + (isHttpUrl(v.reference) ? '<a class="ref-link" href="' + esc(v.reference) + '" target="_blank" rel="noopener">' + esc(v.reference) + '</a>' : '')
+      + '</div>';
 
     h += '<div class="tabs">'
       + '<button class="' + (currentTab === 'script' ? 'on' : '') + '" data-action="setTab" data-t="script">Сценарий</button>'
@@ -873,6 +882,9 @@
     if (el.dataset.bind === 'plot') {
       var v = findVideo(el.dataset.id); v.plot = el.value; save();
     }
+    else if (el.dataset.bind === 'reference') {
+      var v = findVideo(el.dataset.id); v.reference = el.value; save();
+    }
     else if (el.dataset.bind === 'sf') {
       var v = findVideo(el.dataset.id);
       var row = v.script.filter(function (r) { return r.id === el.dataset.row; })[0];
@@ -1053,11 +1065,7 @@
     importInput.value = '';
   });
 
-  imgInput.addEventListener('change', function () {
-    var file = imgInput.files[0];
-    var target = pendingImage;
-    pendingImage = null;
-    imgInput.value = '';
+  function processImageFile(file, target) {
     if (!file || !target) return;
     var reader = new FileReader();
     reader.onload = function () {
@@ -1083,6 +1091,45 @@
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
+  }
+
+  imgInput.addEventListener('change', function () {
+    var file = imgInput.files[0];
+    var target = pendingImage;
+    pendingImage = null;
+    imgInput.value = '';
+    processImageFile(file, target);
+  });
+
+  // Ctrl-V: вставить картинку из буфера
+  function newFrameTarget() {
+    if (route.screen !== 'video') return null;
+    var v = findVideo(route.videoId); if (!v) return null;
+    if (currentTab === 'story') {
+      v.storyboard = v.storyboard || [];
+      var id = uid();
+      v.storyboard.push({ id: id, text: '', img: '' });
+      return { videoId: v.id, rowId: id, script: false };
+    }
+    v.script = v.script || [];
+    var sid = uid();
+    v.script.push({ id: sid, location: '', shot: '', inFrame: '', sound: '', collapsed: false, color: '' });
+    return { videoId: v.id, rowId: sid, script: true };
+  }
+  document.addEventListener('paste', function (e) {
+    if (route.screen !== 'video') return;
+    if (!e.clipboardData) return;
+    var items = e.clipboardData.items || [];
+    var file = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file' && items[i].type && items[i].type.indexOf('image/') === 0) { file = items[i].getAsFile(); break; }
+    }
+    if (!file) return;
+    e.preventDefault();
+    var target = pendingImage || newFrameTarget();
+    if (!target) return;
+    pendingImage = null;
+    processImageFile(file, target);
   });
 
   render();
